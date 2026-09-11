@@ -1,0 +1,80 @@
+spring:
+  application:
+    name: portfolio-mgmt
+
+  # --- Default profile: in-memory H2 for instant interview-demo bootstrapping ---
+  datasource:
+    url: jdbc:h2:mem:portfoliodb;DB_CLOSE_DELAY=-1;MODE=PostgreSQL
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+  jpa:
+    hibernate:
+      # validate in prod-like envs; ddl-auto is fine for H2 demo purposes
+      ddl-auto: update
+    show-sql: true
+    open-in-view: false   # OSIV disabled deliberately -> forces explicit fetch planning (interview talking point)
+    properties:
+      hibernate:
+        format_sql: true
+        show_sql: true
+        highlight_sql: true
+        generate_statistics: true
+        # --- Second Level Cache (L2) configuration using JCache/Caffeine ---
+        cache:
+          use_second_level_cache: true
+          use_query_cache: true
+          region:
+            factory_class: org.hibernate.cache.jcache.internal.JCacheRegionFactory
+        javax:
+          cache:
+            provider: com.github.benmanes.caffeine.jcache.spi.CaffeineCachingProvider
+            uri: classpath:caffeine.properties
+        # Batch fetching helps mitigate N+1 for lazy collections that ARE triggered
+        default_batch_fetch_size: 16
+        jdbc:
+          batch_size: 25
+        order_inserts: true
+        order_updates: true
+
+  # Spring Data JPA auditing is enabled via @EnableJpaAuditing in JpaAuditingConfig
+
+server:
+  port: 8080
+
+logging:
+  level:
+    org.hibernate.SQL: DEBUG
+    org.hibernate.orm.jdbc.bind: TRACE   # shows bind parameter values (Hibernate 6 logger name)
+    org.hibernate.stat: DEBUG            # shows generate_statistics output (query counts, cache hits/misses)
+    com.interview.portfolio: DEBUG
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics,caches
+
+---
+# --- Production-like profile: PostgreSQL ---
+spring:
+  config:
+    activate:
+      on-profile: postgres
+  datasource:
+    url: jdbc:postgresql://localhost:5432/portfoliodb
+    driver-class-name: org.postgresql.Driver
+    username: portfolio_app
+    password: change_me
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect

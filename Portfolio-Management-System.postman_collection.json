@@ -1,0 +1,286 @@
+{
+  "info": {
+    "name": "Portfolio Management System - Interview Reference API",
+    "description": "REST API collection for the Financial Portfolio & Order Management System (Spring Boot 3 / Hibernate 6 interview reference project). Covers Account, TradeOrder, and Portfolio/Asset endpoints, including requests designed to demonstrate optimistic vs. pessimistic locking behavior under concurrency.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_postman_id": "b6f2f5b0-6a3d-4b8b-9e2a-portfolio-mgmt-collection"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080", "type": "string" },
+    { "key": "accountId", "value": "1", "type": "string" },
+    { "key": "assetId", "value": "1", "type": "string" },
+    { "key": "portfolioId", "value": "1", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Account",
+      "item": [
+        {
+          "name": "Get Account by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/accounts/{{accountId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "accounts", "{{accountId}}"]
+            },
+            "description": "Fetches a single Account by its primary key. Returns 404 (ResourceNotFoundException) if the account does not exist."
+          },
+          "response": []
+        },
+        {
+          "name": "Adjust Balance (Deposit)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/accounts/{{accountId}}/adjust-balance?delta=100.00",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "accounts", "{{accountId}}", "adjust-balance"],
+              "query": [
+                { "key": "delta", "value": "100.00", "description": "Positive value = deposit" }
+              ]
+            },
+            "description": "Adds `delta` to the account balance using AccountService.adjustBalance, which relies on optimistic locking (@Version) with an internal retry loop. Send a NEGATIVE delta to simulate a withdrawal."
+          },
+          "response": []
+        },
+        {
+          "name": "Adjust Balance (Withdrawal)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/accounts/{{accountId}}/adjust-balance?delta=-50.00",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "accounts", "{{accountId}}", "adjust-balance"],
+              "query": [
+                { "key": "delta", "value": "-50.00", "description": "Negative value = withdrawal" }
+              ]
+            },
+            "description": "Negative delta withdraws funds. Returns 422 (InsufficientBalanceException) if the resulting balance would go negative."
+          },
+          "response": []
+        },
+        {
+          "name": "Adjust Balance - Concurrency Demo (fire this request many times in the Postman Runner / Collection Runner concurrently)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/accounts/{{accountId}}/adjust-balance?delta=10.00",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "accounts", "{{accountId}}", "adjust-balance"],
+              "query": [
+                { "key": "delta", "value": "10.00" }
+              ]
+            },
+            "description": "Run this same request many times back-to-back or via Postman's Collection Runner with a high iteration count against the SAME accountId to observe optimistic-lock retry behavior in the server logs (ObjectOptimisticLockingFailureException being caught and retried inside AccountService)."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Trade Orders",
+      "item": [
+        {
+          "name": "Execute Trade - BUY",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": {{accountId}},\n  \"assetId\": {{assetId}},\n  \"orderType\": \"BUY\",\n  \"quantity\": 5.000000\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/trade-orders",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "trade-orders"]
+            },
+            "description": "Executes a BUY order. Internally acquires a PESSIMISTIC_WRITE row lock on the Account (findByIdForUpdate) for the duration of the SERIALIZABLE transaction, debits the account balance, creates a Transaction ledger row, and writes an EXECUTED (or REJECTED, if insufficient funds) AuditLog entry via a REQUIRES_NEW transaction that survives even if this trade is rejected/rolled back."
+          },
+          "response": []
+        },
+        {
+          "name": "Execute Trade - SELL",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": {{accountId}},\n  \"assetId\": {{assetId}},\n  \"orderType\": \"SELL\",\n  \"quantity\": 2.000000\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/trade-orders",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "trade-orders"]
+            },
+            "description": "Executes a SELL order, crediting the account balance by quantity * currentPrice."
+          },
+          "response": []
+        },
+        {
+          "name": "Execute Trade - BUY (Insufficient Funds Demo)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": {{accountId}},\n  \"assetId\": {{assetId}},\n  \"orderType\": \"BUY\",\n  \"quantity\": 999999999.000000\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/trade-orders",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "trade-orders"]
+            },
+            "description": "Sends an intentionally huge quantity so the order value exceeds the account balance. Expect HTTP 422 (InsufficientBalanceException) - the TradeOrder is still persisted with status REJECTED and a matching AuditLog row is written, even though this HTTP call itself fails."
+          },
+          "response": []
+        },
+        {
+          "name": "Execute Trade - Concurrency Demo (fire many concurrently against same accountId)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": {{accountId}},\n  \"assetId\": {{assetId}},\n  \"orderType\": \"BUY\",\n  \"quantity\": 1.000000\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/trade-orders",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "trade-orders"]
+            },
+            "description": "Use Postman's Collection Runner with a high iteration count and concurrency > 1 against the SAME accountId/assetId to observe PESSIMISTIC_WRITE row-lock serialization: requests queue and complete one at a time rather than racing/retrying like the optimistic-lock demo above."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Portfolios & Assets",
+      "item": [
+        {
+          "name": "Get Portfolio Summaries for Account (JOIN FETCH N+1 fix)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/portfolios/account/{{accountId}}/summaries",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "portfolios", "account", "{{accountId}}", "summaries"]
+            },
+            "description": "Returns PortfolioSummaryDTO list for all portfolios under the account, backed by PortfolioRepository#findAllWithAssetsByAccountId (JPQL 'join fetch') - executes as a single SQL query regardless of holding count."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Single Portfolio Summary (EntityGraph N+1 fix)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/portfolios/{{portfolioId}}/summary",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "portfolios", "{{portfolioId}}", "summary"]
+            },
+            "description": "Returns a single PortfolioSummaryDTO, backed by PortfolioRepository#findWithAssetsById which uses @EntityGraph(attributePaths = {\"portfolioAssets\", \"portfolioAssets.asset\"}) to avoid N+1 selects."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Portfolios for Account (Paginated)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/portfolios/account/{{accountId}}?page=0&size=10&sort=name,asc",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "portfolios", "account", "{{accountId}}"],
+              "query": [
+                { "key": "page", "value": "0" },
+                { "key": "size", "value": "10" },
+                { "key": "sort", "value": "name,asc" }
+              ]
+            },
+            "description": "Returns a Spring Data Page<Portfolio> for the given account, demonstrating Pageable/Page support (page, size, sort query params are handled automatically by Spring's @PageableDefault + Pageable binding)."
+          },
+          "response": []
+        },
+        {
+          "name": "Search Assets (Dynamic Specification + Pagination)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/portfolios/assets/search?assetType=EQUITY&minPrice=50&maxPrice=500&sector=Tech&page=0&size=20&sort=symbol,asc",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "portfolios", "assets", "search"],
+              "query": [
+                { "key": "symbolContains", "value": "", "disabled": true },
+                { "key": "assetType", "value": "EQUITY" },
+                { "key": "minPrice", "value": "50" },
+                { "key": "maxPrice", "value": "500" },
+                { "key": "sector", "value": "Tech" },
+                { "key": "page", "value": "0" },
+                { "key": "size", "value": "20" },
+                { "key": "sort", "value": "symbol,asc" }
+              ]
+            },
+            "description": "Every query parameter is optional; only non-null fields are applied as Specification predicates (see AssetSpecifications#fromCriteria). Try removing assetType/sector or changing values to see the dynamic WHERE clause change. Toggle 'symbolContains' on to filter by a partial, case-insensitive symbol match."
+          },
+          "response": []
+        },
+        {
+          "name": "Search Assets - Fixed Income Example",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/portfolios/assets/search?assetType=FIXED_INCOME&page=0&size=20&sort=symbol,asc",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "portfolios", "assets", "search"],
+              "query": [
+                { "key": "assetType", "value": "FIXED_INCOME" },
+                { "key": "page", "value": "0" },
+                { "key": "size", "value": "20" },
+                { "key": "sort", "value": "symbol,asc" }
+              ]
+            },
+            "description": "Demonstrates the polymorphic root.type() Criteria predicate filtering to the FixedIncomeAsset subclass under the JOINED inheritance hierarchy."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "H2 Console (reference only)",
+      "item": [
+        {
+          "name": "Open H2 Console",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/h2-console",
+              "host": ["{{baseUrl}}"],
+              "path": ["h2-console"]
+            },
+            "description": "Not a JSON API - open this URL directly in a browser (not Postman) to inspect the in-memory H2 database. JDBC URL: jdbc:h2:mem:portfoliodb, user: sa, blank password (see application.yml)."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
